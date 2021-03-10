@@ -361,6 +361,48 @@ dependencies {
     }
 
     @ToBeFixedForConfigurationCache
+    def 'deletes legacy lock files on upgrade'() {
+        mavenRepo.module('org', 'foo', '1.0').publish()
+        mavenRepo.module('org', 'foo', '1.1').publish()
+        mavenRepo.module('org', 'foo', '2.0').publish()
+
+        buildFile << """
+dependencyLocking {
+    lockAllConfigurations()
+    lockMode = LockMode.${lockMode()}
+}
+
+repositories {
+    maven {
+        name 'repo'
+        url '${mavenRepo.uri}'
+    }
+}
+configurations {
+    lockedConf
+    otherLockedConf
+}
+
+dependencies {
+    lockedConf 'org:foo:1.+'
+    otherLockedConf 'org:foo:2.+'
+}
+"""
+
+
+        lockfileFixture.createLockfile('lockedConf', ["org:foo:1.0"], false)
+        lockfileFixture.createLockfile('otherLockedConf', ["org:foo:1.1"], false)
+
+        when:
+        succeeds 'dependencies', '--write-locks'
+
+        then:
+        lockfileFixture.verifyLockfile([lockedConf: ['org:foo:1.1'], otherLockedConf: ['org:foo:2.0']])
+        lockfileFixture.assertLegacyLockfileMissing('lockedConf')
+        lockfileFixture.assertLegacyLockfileMissing('otherLockedConf')
+    }
+
+    @ToBeFixedForConfigurationCache
     def 'does not write duplicates in the lockfile'() {
         def foo = mavenRepo.module('org', 'foo', '1.0').publish()
         mavenRepo.module('org', 'bar', '1.0').dependsOn(foo).publish()
